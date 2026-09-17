@@ -326,6 +326,12 @@
     .quick-summary-card { padding: 13px; border: 1px solid #d1fae5; border-radius: 11px; background: #fff; }
     .quick-summary-card strong { display: block; color: #065f46; font-size: 20px; }
     .quick-summary-card span { color: var(--muted); font-size: 12px; }
+    .experiment-config-block { border-color: #a5b4fc; background: linear-gradient(135deg, #eef2ff, #fff); }
+    .experiment-config-block h3 { color: #3730a3; }
+    .experiment-tabs { display: flex; gap: 7px; flex-wrap: wrap; margin: 10px 0 12px; }
+    .experiment-tab { display: flex; align-items: center; gap: 7px; min-height: 42px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 10px; color: #334155; background: #fff; text-align: left; }
+    .experiment-tab.active { border-color: #6366f1; color: #3730a3; background: #eef2ff; box-shadow: 0 0 0 2px rgba(99,102,241,.1); }
+    .experiment-tab small { color: var(--muted); font-size: 10px; }
     .quick-condition-list { display: grid; gap: 7px; }
     .quick-condition-item { display: flex; justify-content: space-between; gap: 10px; padding: 10px 11px; border: 1px solid #d1fae5; border-radius: 10px; background: #fff; }
     .quick-condition-item small { color: var(--muted); white-space: nowrap; }
@@ -1049,7 +1055,7 @@
         <button type="button" data-nav="records"><span class="nav-icon">▤</span><span>记录</span></button>
         <button type="button" data-nav="profile"><span class="nav-icon">○</span><span>我的</span></button>
       </nav>
-      <p class="footer-note">实验助手 v1.5 · 数据保存在浏览器 localStorage · 重要记录请定期导出 JSON</p>
+      <p class="footer-note">实验助手 v1.6 · 数据保存在浏览器 localStorage · 重要记录请定期导出 JSON</p>
     </main>
   </div>
 
@@ -1062,10 +1068,10 @@
       'use strict';
 
       const STORAGE_KEY = 'lab-notebook-archive-v1';
-      const TOOL_VERSION = '1.5.0';
+      const TOOL_VERSION = '1.6.0';
       const $ = (selector, root = document) => root.querySelector(selector);
       const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-      const state = { records: [], trash: [], currentId: null, dirty: false, saveTimer: null, toastTimer: null, lastSavedAt: null, lastCalculation: null, view: 'home', designSection: 'starter', activeModuleId: null, activeTool: 'cell-seeding', toolInputs: {}, toolResult: null, preview: { scope: 'all', readout: 'all', slot: '', plateMode: 'fit' }, activePlanIndex: 0, routeStack: [], history: { recordId: null, snapshots: [], savedSignature: '' } };
+      const state = { records: [], trash: [], currentId: null, dirty: false, saveTimer: null, toastTimer: null, lastSavedAt: null, lastCalculation: null, view: 'home', designSection: 'starter', activeModuleId: null, activeTool: 'cell-seeding', toolInputs: {}, toolResult: null, preview: { scope: 'all', readout: 'all', slot: '', plateMode: 'fit' }, activePlanIndex: 0, activeConfigRecipe: '', routeStack: [], history: { recordId: null, snapshots: [], savedSignature: '' } };
 
       const STATUS_LABELS = {
         draft: '设计中',
@@ -1451,6 +1457,7 @@
           layoutPattern: 'linear',
           separateExperiments: true,
           selectedRecipes: [],
+          experimentConfigs: {},
           modules: [],
           moduleConfig: { cell_seeding: { vessel: { ...vessel }, seeding: { ...seeding, source: { ...seeding.source }, execution: { ...seeding.execution, completedContainers: [] } } } },
           resources: [],
@@ -1539,6 +1546,78 @@
         };
       }
 
+      const RECIPE_PLATE_DEFAULTS = { cck8: '96', live_dead: '6', qpcr: '96', cfu: '6', western_blot: '6', elisa: '96' };
+
+      function blankExperimentConfig(recipeKey = '') {
+        const type = RECIPE_PLATE_DEFAULTS[recipeKey] || '96';
+        return {
+          vessel: { kind: 'plate', type, capacity: type, growthArea: '', volumePerUnit: '', avoidEdges: recipeKey === 'cck8' },
+          layoutStrategy: 'continuous',
+          layoutDirection: 'row',
+          layoutPattern: 'linear',
+          separateTimepoints: true,
+          seeding: {}
+        };
+      }
+
+      function normalizeExperimentConfig(raw, recipeKey = '') {
+        const base = blankExperimentConfig(recipeKey);
+        const source = raw && typeof raw === 'object' ? raw : {};
+        const vessel = source.vessel && typeof source.vessel === 'object' ? source.vessel : {};
+        return {
+          ...base,
+          ...source,
+          vessel: { ...base.vessel, ...vessel, kind: CONTAINER_TYPES[vessel.kind] ? vessel.kind : base.vessel.kind, type: text(vessel.type) || base.vessel.type, capacity: text(vessel.capacity) || text(vessel.type) || base.vessel.capacity, avoidEdges: vessel.avoidEdges === true || vessel.avoidEdges === 'true' },
+          layoutStrategy: source.layoutStrategy === 'balanced' ? 'balanced' : 'continuous',
+          layoutDirection: source.layoutDirection === 'column' ? 'column' : 'row',
+          layoutPattern: source.layoutPattern === 'snake' ? 'snake' : 'linear',
+          separateTimepoints: source.separateTimepoints !== false && source.separateTimepoints !== 'false',
+          seeding: source.seeding && typeof source.seeding === 'object' ? { ...source.seeding } : {}
+        };
+      }
+
+      function getExperimentConfig(design, recipeKey = '') {
+        const configs = design.experimentConfigs && typeof design.experimentConfigs === 'object' ? design.experimentConfigs : {};
+        const legacySingle = !configs[recipeKey] && Object.keys(configs).length === 0 && (design.selectedRecipes || []).length <= 1;
+        const legacy = legacySingle ? { vessel: design.vessel, layoutStrategy: design.layoutStrategy, layoutDirection: design.layoutDirection, layoutPattern: design.layoutPattern, separateTimepoints: design.separateTimepoints, seeding: design.seeding } : null;
+        return normalizeExperimentConfig({ ...(legacy || {}), ...(configs[recipeKey] || {}) }, recipeKey);
+      }
+
+      function ensureExperimentConfigs(design) {
+        if (!design.experimentConfigs || typeof design.experimentConfigs !== 'object') design.experimentConfigs = {};
+        for (const recipeKey of design.selectedRecipes || []) {
+          if (!design.experimentConfigs[recipeKey]) design.experimentConfigs[recipeKey] = getExperimentConfig(design, recipeKey);
+          else design.experimentConfigs[recipeKey] = normalizeExperimentConfig(design.experimentConfigs[recipeKey], recipeKey);
+        }
+        return design.experimentConfigs;
+      }
+
+      function experimentConfigField(recipeKey, label, path, value, placeholder = '', type = 'text', extraClass = '') {
+        return `<label class="field ${extraClass}"><span>${escapeHtml(label)}</span><input data-experiment-field="${escapeAttr(`${recipeKey}|${path}`)}" type="${type}" value="${escapeAttr(value)}" placeholder="${escapeAttr(placeholder)}"></label>`;
+      }
+
+      function experimentConfigSelect(recipeKey, label, path, value, options, extraClass = '') {
+        return `<label class="field ${extraClass}"><span>${escapeHtml(label)}</span><select data-experiment-field="${escapeAttr(`${recipeKey}|${path}`)}">${options.map(option => `<option value="${escapeAttr(option.value)}" ${option.value === value ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select></label>`;
+      }
+
+      function renderExperimentConfigEditor(design) {
+        const recipes = (design.selectedRecipes || []).filter(key => RECIPE_DEFS[key]);
+        if (!recipes.length) return '<div class="starter-block"><h3>孔板与排列</h3><p>先选择检测目标，系统会为每个独立实验方案提供单独的孔板配置。</p></div>';
+        ensureExperimentConfigs(design);
+        const active = recipes.includes(state.activeConfigRecipe) ? state.activeConfigRecipe : recipes[0];
+        state.activeConfigRecipe = active;
+        const config = getExperimentConfig(design, active);
+        const vesselOptions = Object.entries(CONTAINER_TYPES).map(([value, item]) => ({ value, label: item.label }));
+        const plateOptions = Object.keys(PLATE_GEOMETRY).map(value => ({ value, label: `${value} 孔板` }));
+        const fields = `${experimentConfigSelect(active, '培养载体', 'vessel.kind', config.vessel.kind, vesselOptions)}${config.vessel.kind === 'plate' ? experimentConfigSelect(active, '孔板规格', 'vessel.type', config.vessel.type, plateOptions) : experimentConfigField(active, '容量 / 容器数', 'vessel.capacity', config.vessel.capacity, '例如 10', 'number')}${experimentConfigSelect(active, '排列方向', 'layoutDirection', config.layoutDirection, [{ value: 'row', label: '横向排列（按行）' }, { value: 'column', label: '纵向排列（按列）' }])}${experimentConfigSelect(active, '填充方式', 'layoutPattern', config.layoutPattern, [{ value: 'linear', label: '连续填充' }, { value: 'snake', label: '蛇形填充' }])}${experimentConfigSelect(active, '布局策略', 'layoutStrategy', config.layoutStrategy, [{ value: 'continuous', label: '组内连续排列' }, { value: 'balanced', label: '跨容器平衡' }])}${experimentConfigField(active, 'Blank 孔数', 'seeding.blankUnits', config.seeding.blankUnits || '0', '例如 2', 'number')}${experimentConfigField(active, '备用孔数', 'seeding.spareUnits', config.seeding.spareUnits || '0', '例如 2', 'number')}${experimentConfigField(active, '边缘填充孔数', 'seeding.edgeFillUnits', config.seeding.edgeFillUnits || '0', '例如 0', 'number')}`;
+        return `<div class="starter-block span-2 experiment-config-block"><h3>每个实验方案的孔板与排列</h3><p>这里的设置只作用于当前方案。CCK-8 可设 96 孔；Live/Dead 可设 6 孔，两个方案互不影响。</p><div class="experiment-tabs">${recipes.map(key => `<button class="experiment-tab ${key === active ? 'active' : ''}" type="button" data-config-recipe="${escapeAttr(key)}"><span>${escapeHtml(recipeLabel(key))}</span><small>${escapeHtml(configForLabel(design, key))}</small></button>`).join('')}</div><div class="quick-grid">${fields}</div><label class="quick-check"><input data-experiment-field="${escapeAttr(`${active}|vessel.avoidEdges`)}" type="checkbox" ${config.vessel.avoidEdges ? 'checked' : ''}> 避开孔板边缘孔（关闭后可使用全部孔位）</label><div class="quick-note">当前方案：${escapeHtml(recipeLabel(active))} · ${escapeHtml(config.vessel.type || config.vessel.kind)} · ${escapeHtml(layoutDirectionLabel(config))} · ${config.layoutPattern === 'snake' ? '蛇形填充' : '连续填充'}</div></div>`;
+      }
+
+      function configForLabel(design, recipeKey) {
+        const cfg = getExperimentConfig(design, recipeKey);
+        return cfg.vessel.kind === 'plate' ? `${cfg.vessel.type}孔板` : CONTAINER_TYPES[cfg.vessel.kind]?.label || cfg.vessel.kind;
+      }
+
       function normalizeExperimentDesign(raw) {
         const source = raw && typeof raw === 'object' ? raw : {};
         const looksGeneric = source.schemaVersion >= 2 || source.object || source.vessel || source.factors || source.seeding;
@@ -1584,6 +1663,7 @@
             })).filter(level => clean(level.label)) : []
           })).filter(factor => clean(factor.name)),
           selectedRecipes,
+          experimentConfigs: source.experimentConfigs && typeof source.experimentConfigs === 'object' ? Object.fromEntries(Object.entries(source.experimentConfigs).map(([key, value]) => [key, normalizeExperimentConfig(value, key)])) : {},
           customSteps: Array.isArray(source.customSteps) ? source.customSteps.map(step => ({ ...blankCustomStep(), ...step, inputs: Array.isArray(step.inputs) ? step.inputs : [], outputs: Array.isArray(step.outputs) ? step.outputs : [], parameters: Array.isArray(step.parameters) ? step.parameters : [], quantityRules: Array.isArray(step.quantityRules) ? step.quantityRules : [] })) : base.customSteps,
           modules: Array.isArray(source.modules) ? source.modules.filter(item => MODULE_DEFS[item.type]).map(item => ({ id: clean(item.id) || makeId('MODULE'), type: item.type, parameters: { ...moduleParameterDefaults(item.type), ...(item.parameters && typeof item.parameters === 'object' ? item.parameters : {}) } })) : [],
           replication: {
@@ -2576,12 +2656,17 @@
 
 
       function designForRecipe(design, recipeKey = '') {
-        const separate = design.separateExperiments !== false;
+        const config = getExperimentConfig(design, recipeKey);
+        const mergedSeeding = { ...(design.seeding || {}), ...(config.seeding || {}), source: { ...(design.seeding?.source || {}), ...(config.seeding?.source || {}) } };
         return {
           ...design,
+          ...config,
           selectedRecipes: recipeKey ? [recipeKey] : [...(design.selectedRecipes || [])],
-          modules: separate && recipeKey ? [] : [...(design.modules || [])],
-          readouts: separate && recipeKey ? [] : [...(design.readouts || [])],
+          vessel: { ...config.vessel },
+          seeding: mergedSeeding,
+          moduleConfig: { ...(design.moduleConfig || {}), cell_seeding: { ...(design.moduleConfig?.cell_seeding || {}), vessel: { ...config.vessel }, seeding: mergedSeeding } },
+          modules: config.separateExperiments !== false && recipeKey ? [] : [...(design.modules || [])],
+          readouts: config.separateExperiments !== false && recipeKey ? [] : [...(design.readouts || [])],
           generatedPlan: null
         };
       }
@@ -3159,13 +3244,14 @@
         const selected = (design.selectedRecipes || []).map(recipeLabel).join('＋');
         const vesselOptions = Object.entries(CONTAINER_TYPES).map(([value, item]) => ({ value, label: item.label }));
         const plateOptions = Object.keys(PLATE_GEOMETRY).map(value => ({ value, label: `${value} 孔板` }));
-        const vesselFields = `${designSelect('培养载体', 'vessel.kind', design.vessel.kind, vesselOptions)}${design.vessel.kind === 'plate' ? designSelect('孔板规格', 'vessel.type', design.vessel.type, plateOptions) : designField('容量 / 容器数', 'vessel.capacity', design.vessel.capacity, '例如 10', 'number')}${designSelect('排列方向', 'layoutDirection', design.layoutDirection, [{ value: 'row', label: '横向排列（按行）' }, { value: 'column', label: '纵向排列（按列）' }])}${designSelect('填充方式', 'layoutPattern', design.layoutPattern, [{ value: 'linear', label: '连续填充' }, { value: 'snake', label: '蛇形填充' }])}`;
+        const configEditor = renderExperimentConfigEditor(design);
         return `<div class="starter-panel"><div class="starter-grid">
           <div class="starter-block"><h3>你研究什么？</h3><p>先写对象，不要求现在补齐批次和来源。</p>${designSelect('对象类型', 'object.type', design.object.type, Object.entries(OBJECT_TYPES).map(([value, label]) => ({ value, label })))}${designField('对象名称', 'object.name', design.object.name, '例如 MC3T3-E1、E. coli 或 RNA')}</div>
           <div class="starter-block"><h3>你要比较什么？</h3><p>用人能读懂的条件标签；统计因素留在高级设置。</p>${renderConditionChips(design, true)}</div>
           <div class="starter-block"><h3>你要测什么？</h3><p>多个检测目标默认拆成多个独立实验方案，不会把流程和孔板混在一起。</p>${renderRecipeChips(design)}<div class="subtle-note" style="margin-top:9px">${escapeHtml(selected || '尚未选择检测目标')}</div><label class="quick-check"><input data-design-field="separateExperiments" type="checkbox" ${design.separateExperiments !== false ? 'checked' : ''}> 每个检测目标独立生成实验方案（推荐）</label></div>
+          ${configEditor}
           <div class="starter-block"><h3>什么时候？</h3><p>终点时间会决定是否拆分容器和收样路径。</p>${renderTimeChips(design, true)}</div>
-          <div class="starter-block span-2"><details class="advanced-block"><summary>高级设置（孔板、排列、重复和对象批次）</summary><div class="advanced-body"><div class="quick-grid">${designField('对象批次 / passage', 'object.batch', design.object.batch, '例如 P4 / Batch 1')}${designField('Biological replicate', 'replication.biological', design.replication.biological, '例如 3', 'number')}${designField('Technical replicate', 'replication.technical', design.replication.technical, '例如 3', 'number')}${designSelect('布局策略', 'layoutStrategy', design.layoutStrategy, [{ value: 'continuous', label: '组内连续排列' }, { value: 'balanced', label: '跨容器平衡' }])}${vesselFields}</div><label class="quick-check"><input data-design-field="vessel.avoidEdges" type="checkbox" ${design.vessel.avoidEdges ? 'checked' : ''}> 避开孔板边缘孔（可关闭，自主使用全部孔位）</label><div class="quick-note">支持 6、12、24、48、96 孔板；改变孔板或排列方式后，需要重新生成实验方案。</div><label class="quick-check"><input data-design-field="separateTimepoints" type="checkbox" ${design.separateTimepoints ? 'checked' : ''}> 终点检测消耗样本时按时间点拆分容器</label></div></details></div>
+          <div class="starter-block span-2"><details class="advanced-block"><summary>其他高级设置（重复、对象批次和时间点）</summary><div class="advanced-body"><div class="quick-grid">${designField('对象批次 / passage', 'object.batch', design.object.batch, '例如 P4 / Batch 1')}${designField('Biological replicate', 'replication.biological', design.replication.biological, '例如 3', 'number')}${designField('Technical replicate', 'replication.technical', design.replication.technical, '例如 3', 'number')}</div><label class="quick-check"><input data-design-field="separateTimepoints" type="checkbox" ${design.separateTimepoints ? 'checked' : ''}> 终点检测消耗样本时按时间点拆分容器</label></div></details></div>
         </div><div class="starter-actions"><span class="subtle-note">生成后进入方案总览；可以在总览中切换独立实验方案。</span><div class="action-group"><button class="button-secondary" type="button" data-design-action="back-overview">返回方案总览（保留草稿）</button><button class="button-primary" type="button" data-starter-action="generate">生成实验方案</button></div></div></div>`;
       }
 
@@ -3463,6 +3549,23 @@
           stored.parameters = { ...moduleParameterDefaults(stored.type), ...(stored.parameters || {}) };
           setPath(stored.parameters, path.replace(/^parameters\./, ''), value);
         }
+        invalidateGeneratedPlan(record.design);
+        markDirty();
+        if (field.tagName === 'SELECT' || field.type === 'checkbox') renderQuickDesigner(record);
+      }
+
+      function experimentConfigChanged(field) {
+        const record = currentRecord();
+        if (!record) return;
+        const [recipeKey, path] = String(field.dataset.experimentField || '').split('|');
+        if (!recipeKey || !path) return;
+        const config = getExperimentConfig(record.design, recipeKey);
+        const value = field.type === 'checkbox' ? field.checked : field.value;
+        setPath(config, path, value);
+        if (path === 'vessel.kind') { config.vessel.capacity = String(CONTAINER_TYPES[value]?.defaultCapacity || 1); config.vessel.type = value === 'plate' ? (RECIPE_PLATE_DEFAULTS[recipeKey] || '96') : 'custom'; }
+        if (path === 'vessel.type') config.vessel.capacity = value;
+        if (!record.design.experimentConfigs) record.design.experimentConfigs = {};
+        record.design.experimentConfigs[recipeKey] = normalizeExperimentConfig(config, recipeKey);
         invalidateGeneratedPlan(record.design);
         markDirty();
         if (field.tagName === 'SELECT' || field.type === 'checkbox') renderQuickDesigner(record);
@@ -4489,6 +4592,8 @@
         const timepointField = event.target.closest('[data-design-section="timepoints"] [data-design-key]');
         const customStepField = event.target.closest('[data-custom-step-field]');
         if (customStepField) { customStepChanged(customStepField); return; }
+        const experimentField = event.target.closest('[data-experiment-field]');
+        if (experimentField) { experimentConfigChanged(experimentField); return; }
         const field = event.target.closest('[data-design-field]');
         if (condition) conditionLevelChanged(condition);
         else if (timeChip) timepointChipChanged(timeChip);
@@ -4506,6 +4611,8 @@
         const moduleField = event.target.closest('[data-design-module-field]');
         const factorField = event.target.closest('[data-design-section="factors"] [data-design-key]');
         const timepointField = event.target.closest('[data-design-section="timepoints"] [data-design-key]');
+        const experimentField = event.target.closest('[data-experiment-field]');
+        if (experimentField) { experimentConfigChanged(experimentField); return; }
         const field = event.target.closest('[data-design-field]');
         if (timeChip) timepointChipChanged(timeChip);
         else if (moduleField) moduleFieldChanged(moduleField);
@@ -4626,6 +4733,8 @@
           renderCurrent();
           return;
         }
+        const configRecipe = event.target.closest('[data-config-recipe]');
+        if (configRecipe) { state.activeConfigRecipe = configRecipe.dataset.configRecipe; renderQuickDesigner(currentRecord()); return; }
         const planIndex = event.target.closest('[data-plan-index]');
         if (planIndex) { state.activePlanIndex = Number(planIndex.dataset.planIndex) || 0; state.preview.slot = ''; renderCurrent(); return; }
         const previewPlateMode = event.target.closest('[data-preview-plate-mode]');

@@ -333,7 +333,19 @@
     .layout-card { overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
     .layout-card-head { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); color: #334155; font-weight: 800; }
     .layout-card-head small { color: var(--muted); font-weight: 500; }
-    .plate-grid { display: grid; grid-template-columns: repeat(var(--cols), minmax(30px, 1fr)); gap: 5px; padding: 12px; overflow-x: auto; }
+    .plate-grid { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 3px; width: 100%; min-width: 0; padding: 10px; overflow: hidden; }
+    .plate-grid.plate-large { min-width: 520px; overflow-x: auto; }
+    .plate-fit .well { min-width: 0; min-height: clamp(24px, 7vw, 40px); padding: 2px; font-size: clamp(7px, 2.1vw, 10px); }
+    .plate-fit .well small { font-size: clamp(5px, 1.6vw, 9px); }
+    .plate-legend { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 0 10px 8px; color: var(--muted); font-size: 11px; }
+    .plate-legend span { display: inline-flex; gap: 4px; align-items: center; }
+    .plate-legend i { display: inline-block; width: 10px; height: 10px; border: 1px solid var(--line); border-radius: 3px; background: #fff; }
+    .plate-legend .legend-control { border-color: #86efac; background: #f0fdf4; }
+    .plate-legend .legend-sample { border-color: #93c5fd; background: #eff6ff; }
+    .plate-legend .legend-edge { border-color: #cbd5e1; background: #f1f5f9; }
+    .plate-zoom { display: flex; gap: 6px; flex-wrap: wrap; }
+    .plate-zoom .preview-tab { min-height: 32px; }
+    .layout-direction-note { color: var(--muted); font-size: 11px; }
     .well { min-height: 36px; display: grid; place-items: center; padding: 3px; border: 1px solid #bfdbfe; border-radius: 6px; color: #1e3a8a; background: #eff6ff; font-size: 10px; text-align: center; word-break: break-word; }
     .well.edge { border-color: #cbd5e1; color: #64748b; background: #f1f5f9; }
     .well.empty { border-style: dashed; color: #94a3b8; background: #f8fafc; }
@@ -790,7 +802,11 @@
       .resource-row { flex-direction: column; }
       .resource-row > strong { text-align: left; }
       .quick-nav button { min-height: 44px; }
-      .plate-grid { min-width: 520px; }
+      .plate-grid { min-width: 0; }
+      .plate-grid.plate-large { min-width: 520px; }
+      .plate-fit { width: 100%; overflow: hidden; }
+      .plate-fit .well { min-height: 30px; }
+      .plate-legend { font-size: 10px; }
       .toolbar-actions, .top-actions { width: 100%; }
       .toolbar-actions > button, .top-actions > button { flex: 1 1 140px; min-height: 44px; }
       .storage-state { width: 100%; }
@@ -1049,7 +1065,7 @@
       const TOOL_VERSION = '1.4.0';
       const $ = (selector, root = document) => root.querySelector(selector);
       const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-      const state = { records: [], trash: [], currentId: null, dirty: false, saveTimer: null, toastTimer: null, lastSavedAt: null, lastCalculation: null, view: 'home', designSection: 'starter', activeModuleId: null, activeTool: 'cell-seeding', toolInputs: {}, toolResult: null, preview: { scope: 'all', readout: 'all', slot: '' }, routeStack: [], history: { recordId: null, snapshots: [], savedSignature: '' } };
+      const state = { records: [], trash: [], currentId: null, dirty: false, saveTimer: null, toastTimer: null, lastSavedAt: null, lastCalculation: null, view: 'home', designSection: 'starter', activeModuleId: null, activeTool: 'cell-seeding', toolInputs: {}, toolResult: null, preview: { scope: 'all', readout: 'all', slot: '', plateMode: 'fit' }, activePlanIndex: 0, routeStack: [], history: { recordId: null, snapshots: [], savedSignature: '' } };
 
       const STATUS_LABELS = {
         draft: '设计中',
@@ -1399,7 +1415,7 @@
 
 
       function blankExperimentDesign() {
-        const vessel = { kind: 'plate', type: '96', capacity: '96', growthArea: '', volumePerUnit: '', avoidEdges: true };
+        const vessel = { kind: 'plate', type: '96', capacity: '96', growthArea: '', volumePerUnit: '', avoidEdges: false };
         const seeding = {
           source: { mode: 'later', concentration: '', viability: '', sourceRef: '' },
           targetMode: 'per_unit',
@@ -1431,6 +1447,9 @@
           timepoints: [{ id: makeId('TIME'), value: '1', unit: 'd' }],
           separateTimepoints: true,
           layoutStrategy: 'continuous',
+          layoutDirection: 'row',
+          layoutPattern: 'linear',
+          separateExperiments: true,
           selectedRecipes: [],
           modules: [],
           moduleConfig: { cell_seeding: { vessel: { ...vessel }, seeding: { ...seeding, source: { ...seeding.source }, execution: { ...seeding.execution, completedContainers: [] } } } },
@@ -1574,6 +1593,9 @@
           timepoints: timepointsSource.map(item => ({ id: clean(item.id) || makeId('TIME'), value: text(item.value), unit: text(item.unit) || 'd' })),
           separateTimepoints: source.separateTimepoints !== false && source.separateTimepoints !== 'false',
           layoutStrategy: source.layoutStrategy === 'balanced' ? 'balanced' : 'continuous',
+          layoutDirection: source.layoutDirection === 'column' ? 'column' : 'row',
+          layoutPattern: source.layoutPattern === 'snake' ? 'snake' : 'linear',
+          separateExperiments: source.separateExperiments !== false && source.separateExperiments !== 'false',
           modules: Array.isArray(source.modules) ? source.modules.filter(item => MODULE_DEFS[item.type]).map(item => ({ id: clean(item.id) || makeId('MODULE'), type: item.type, parameters: { ...moduleParameterDefaults(item.type), ...(item.parameters && typeof item.parameters === 'object' ? item.parameters : {}) } })) : [],
           readouts: Array.isArray(source.readouts) ? source.readouts.map(item => ({
             id: clean(item.id) || makeId('READOUT'),
@@ -2114,6 +2136,38 @@
         return positions;
       }
 
+      function orderedLayoutPositions(positions, geometry, direction = 'row', pattern = 'linear') {
+        const list = [...(positions || [])];
+        if (!geometry) return list;
+        if (direction === 'column') {
+          if (pattern === 'snake') {
+            const result = [];
+            for (let column = 0; column < geometry.cols; column += 1) {
+              const group = list.filter(item => item.column === column).sort((a, b) => a.row - b.row);
+              if (column % 2 === 1) group.reverse();
+              result.push(...group);
+            }
+            return result;
+          }
+          return list.sort((a, b) => a.column - b.column || a.row - b.row);
+        }
+        if (pattern === 'snake') {
+          const result = [];
+          for (let row = 0; row < geometry.rows; row += 1) {
+            const group = list.filter(item => item.row === row).sort((a, b) => a.column - b.column);
+            if (row % 2 === 1) group.reverse();
+            result.push(...group);
+          }
+          return result;
+        }
+        return list.sort((a, b) => a.row - b.row || a.column - b.column);
+      }
+
+      function layoutDirectionLabel(designOrPlan) {
+        const direction = designOrPlan?.layoutDirection === 'column' ? '纵向排列' : '横向排列';
+        return designOrPlan?.layoutPattern === 'snake' ? `${direction} · 蛇形` : direction;
+      }
+
       function normalizedFactors(design) {
         return (design.factors || []).map(factor => ({
           id: factor.id,
@@ -2521,6 +2575,45 @@
       }
 
 
+      function designForRecipe(design, recipeKey = '') {
+        const separate = design.separateExperiments !== false;
+        return {
+          ...design,
+          selectedRecipes: recipeKey ? [recipeKey] : [...(design.selectedRecipes || [])],
+          modules: separate && recipeKey ? [] : [...(design.modules || [])],
+          readouts: separate && recipeKey ? [] : [...(design.readouts || [])],
+          generatedPlan: null
+        };
+      }
+
+      function compileExperimentPlans(design) {
+        const recipes = (design.selectedRecipes || []).filter(key => RECIPE_DEFS[key]);
+        if (!recipes.length) {
+          const plan = compileExperimentPlan(designForRecipe(design, ''));
+          return [{ recipeKey: '', recipeLabel: '未选择检测目标', plan }];
+        }
+        if (design.separateExperiments !== false && recipes.length > 1) {
+          return recipes.map(recipeKey => {
+            const plan = compileExperimentPlan(designForRecipe(design, recipeKey));
+            plan.recipeKey = recipeKey;
+            plan.recipeLabel = recipeLabel(recipeKey);
+            return { recipeKey, recipeLabel: recipeLabel(recipeKey), plan };
+          });
+        }
+        const recipeKey = recipes[0];
+        const plan = compileExperimentPlan(designForRecipe(design, design.separateExperiments === false ? '' : recipeKey));
+        plan.recipeKey = recipeKey;
+        plan.recipeLabel = recipes.length > 1 ? '组合方案' : recipeLabel(recipeKey);
+        return [{ recipeKey, recipeLabel: plan.recipeLabel, plan }];
+      }
+
+      function activeCompiledPlan(design) {
+        const entries = compileExperimentPlans(design);
+        const index = Math.max(0, Math.min(Number(state.activePlanIndex || 0), entries.length - 1));
+        state.activePlanIndex = index;
+        return entries[index];
+      }
+
       function compileExperimentPlan(design) {
         const warnings = [];
         const blockingWarnings = [];
@@ -2546,6 +2639,7 @@
         const hasSeedingModule = workflow.some(item => item.type === 'cell_seeding');
         const readouts = readoutsForDesign(design);
         const vessel = vesselProfile(design.vessel || {});
+        const placementPositions = orderedLayoutPositions(vessel.samplePositions, vessel.geometry, design.layoutDirection, design.layoutPattern);
         const replication = design.replication || {};
         const biological = Number.parseInt(replication.biological, 10);
         const technical = Number.parseInt(replication.technical, 10);
@@ -2579,8 +2673,8 @@
           return true;
         };
         const placeBatch = (batch, timepoint) => {
-          if (!batch.length || !vessel.samplePositions.length || !replicateTotal) return;
-          const needed = Math.ceil(batch.length * replicateTotal / vessel.samplePositions.length);
+          if (!batch.length || !placementPositions.length || !replicateTotal) return;
+          const needed = Math.ceil(batch.length * replicateTotal / placementPositions.length);
           const batchContainers = Array.from({ length: needed }, () => createContainer(timepoint));
           let sequence = 0;
           for (const condition of batch) {
@@ -2589,10 +2683,10 @@
                 let targetIndex = design.layoutStrategy === 'balanced' ? sequence % batchContainers.length : Math.floor(sequence / vessel.samplePositions.length);
                 targetIndex = Math.min(targetIndex, batchContainers.length - 1);
                 let target = batchContainers[targetIndex];
-                let position = vessel.samplePositions.find(item => !target._used.has(item.label));
+                let position = placementPositions.find(item => !target._used.has(item.label));
                 if (!position) {
-                  target = batchContainers.find(item => item._used.size < vessel.samplePositions.length);
-                  position = target && vessel.samplePositions.find(item => !target._used.has(item.label));
+                  target = batchContainers.find(item => item._used.size < placementPositions.length);
+                  position = target && placementPositions.find(item => !target._used.has(item.label));
                 }
                 addAssignment(target, position, {
                   role: condition.control ? 'control' : 'sample',
@@ -2739,6 +2833,8 @@
           replication: { biological: safeBiological, technical: safeTechnical, total: replicateTotal },
           separateTimepoints,
           layoutStrategy: design.layoutStrategy === 'balanced' ? 'balanced' : 'continuous',
+          layoutDirection: design.layoutDirection === 'column' ? 'column' : 'row',
+          layoutPattern: design.layoutPattern === 'snake' ? 'snake' : 'linear',
           containers: serializedContainers,
           totalContainers: serializedContainers.length,
           sampleUnits,
@@ -2904,7 +3000,8 @@
               cells.push(renderPreviewWell(plan, vessel, container, position, bySlot.get(position.label), context, selectedSlot, readoutLabel));
             }
           }
-          body = `<div class="plate-grid" style="--cols:${vessel.geometry.cols}">${cells.join('')}</div>`;
+          const large = preview.plateMode === 'large';
+          body = `<div class="plate-fit ${large ? 'plate-large' : ''}"><div class="plate-grid ${large ? 'plate-large' : ''}" style="--cols:${vessel.geometry.cols}">${cells.join('')}</div><div class="plate-legend"><span><i class="legend-control"></i>对照</span><span><i class="legend-sample"></i>样本</span><span><i class="legend-edge"></i>边缘 / 空位</span></div></div>`;
         } else {
           body = `<div class="preview-slot-list">${positions.map(position => renderPreviewWell(plan, vessel, container, position, bySlot.get(position.label), context, selectedSlot, readoutLabel)).join('')}</div>`;
         }
@@ -2916,12 +3013,12 @@
         if (!previewable) return '';
         if (!plan.containers?.length) return `<section class="container-preview"><div class="preview-head"><div><h3>容器预览</h3><p>当前条件和重复尚未生成可预览的位置。</p></div><span class="prototype-tag">live preview</span></div><div class="preview-empty">先补充条件、时间和重复数，系统会在这里生成容器布局。</div></section>`;
         const vessel = vesselProfile(plan.vessel || {});
-        const preview = state.preview || { scope: 'all', readout: 'all', slot: '' };
+        const preview = state.preview || { scope: 'all', readout: 'all', slot: '', plateMode: 'fit' };
         const scopes = [...new Set(plan.containers.map(container => container.timepoint || '未定时间'))];
         const scope = preview.scope === 'all' || scopes.includes(preview.scope) ? preview.scope : 'all';
         const readoutKeys = (plan.readouts || []).map(item => item.key || item.id);
         const readout = preview.readout === 'all' || readoutKeys.includes(preview.readout) ? preview.readout : 'all';
-        const currentPreview = { ...preview, scope, readout };
+        const currentPreview = { ...preview, scope, readout, plateMode: preview.plateMode === 'large' ? 'large' : 'fit' };
         const visibleContainers = scope === 'all' ? plan.containers : plan.containers.filter(container => (container.timepoint || '未定时间') === scope);
         const previewType = (plan.workflow || []).some(item => item.type === 'cell_seeding') ? '孔板预览 · Cell Seeding' : (plan.workflow || []).some(item => item.type === 'agar_plating') ? '平板预览 · 涂板' : '容器预览 · 读板';
         const readoutLabel = previewReadoutLabel(plan, readout);
@@ -2934,7 +3031,8 @@
         const readoutTabs = readoutKeys.length ? `<div class="preview-tabs" aria-label="readout 过滤"><button class="preview-tab ${readout === 'all' ? 'active' : ''}" type="button" data-preview-readout="all" data-preview-context="${escapeAttr(context)}">全部 readout</button>${readoutKeys.map(key => `<button class="preview-tab ${readout === key ? 'active' : ''}" type="button" data-preview-readout="${escapeAttr(key)}" data-preview-context="${escapeAttr(context)}">${escapeHtml(previewReadoutLabel(plan, key))}</button>`).join('')}</div>` : '';
         const assignedCount = visibleContainers.reduce((sum, container) => sum + (container.assignments || []).length, 0);
         const containerCount = vessel.geometry ? `${visibleContainers.length} 块板` : `${visibleContainers.length} 个${vessel.unit || '容器'}`;
-        return `<section class="container-preview" data-preview-context="${escapeAttr(context)}"><div class="preview-head"><div><h3>${previewType}</h3><p>${containerCount} · ${assignedCount} 个已分配位置 · 当前 ${escapeHtml(readoutLabel)}；点击位置查看详情。</p></div><span class="prototype-tag">live preview</span></div><div class="preview-toolbar"><div class="preview-tabs" aria-label="时间点过滤">${scopeTabs}</div>${readoutTabs}</div><div class="preview-container-list">${visibleContainers.map(container => renderPreviewContainer(plan, vessel, container, context, currentPreview, readoutLabel, completedContainers)).join('')}</div><div class="preview-inspector">${inspector}</div></section>`;
+        const zoom = vessel.geometry ? `<div class="plate-zoom"><button class="preview-tab ${currentPreview.plateMode === 'fit' ? 'active' : ''}" type="button" data-preview-plate-mode="fit">适配屏幕</button><button class="preview-tab ${currentPreview.plateMode === 'large' ? 'active' : ''}" type="button" data-preview-plate-mode="large">放大横向</button></div>` : '';
+        return `<section class="container-preview" data-preview-context="${escapeAttr(context)}"><div class="preview-head"><div><h3>${previewType}</h3><p>${containerCount} · ${assignedCount} 个已分配位置 · 当前 ${escapeHtml(readoutLabel)}；点击位置查看详情。</p></div><span class="prototype-tag">live preview</span></div><div class="preview-toolbar"><div class="preview-controls"><div class="preview-tabs" aria-label="时间点过滤">${scopeTabs}</div>${zoom}</div>${readoutTabs}</div><div class="preview-container-list">${visibleContainers.map(container => renderPreviewContainer(plan, vessel, container, context, currentPreview, readoutLabel, completedContainers)).join('')}</div><div class="preview-inspector">${inspector}</div></section>`;
       }
 
       function recipeLabel(key) {
@@ -3059,13 +3157,16 @@
       function renderDesignStarter(record) {
         const design = record.design;
         const selected = (design.selectedRecipes || []).map(recipeLabel).join('＋');
+        const vesselOptions = Object.entries(CONTAINER_TYPES).map(([value, item]) => ({ value, label: item.label }));
+        const plateOptions = Object.keys(PLATE_GEOMETRY).map(value => ({ value, label: `${value} 孔板` }));
+        const vesselFields = `${designSelect('培养载体', 'vessel.kind', design.vessel.kind, vesselOptions)}${design.vessel.kind === 'plate' ? designSelect('孔板规格', 'vessel.type', design.vessel.type, plateOptions) : designField('容量 / 容器数', 'vessel.capacity', design.vessel.capacity, '例如 10', 'number')}${designSelect('排列方向', 'layoutDirection', design.layoutDirection, [{ value: 'row', label: '横向排列（按行）' }, { value: 'column', label: '纵向排列（按列）' }])}${designSelect('填充方式', 'layoutPattern', design.layoutPattern, [{ value: 'linear', label: '连续填充' }, { value: 'snake', label: '蛇形填充' }])}`;
         return `<div class="starter-panel"><div class="starter-grid">
           <div class="starter-block"><h3>你研究什么？</h3><p>先写对象，不要求现在补齐批次和来源。</p>${designSelect('对象类型', 'object.type', design.object.type, Object.entries(OBJECT_TYPES).map(([value, label]) => ({ value, label })))}${designField('对象名称', 'object.name', design.object.name, '例如 MC3T3-E1、E. coli 或 RNA')}</div>
           <div class="starter-block"><h3>你要比较什么？</h3><p>用人能读懂的条件标签；统计因素留在高级设置。</p>${renderConditionChips(design, true)}</div>
-          <div class="starter-block"><h3>你要测什么？</h3><p>选择一个或多个检测目标；模块会随 readout 自动生成。</p>${renderRecipeChips(design)}<div class="subtle-note" style="margin-top:9px">${escapeHtml(selected || '尚未选择检测目标')}</div></div>
+          <div class="starter-block"><h3>你要测什么？</h3><p>多个检测目标默认拆成多个独立实验方案，不会把流程和孔板混在一起。</p>${renderRecipeChips(design)}<div class="subtle-note" style="margin-top:9px">${escapeHtml(selected || '尚未选择检测目标')}</div><label class="quick-check"><input data-design-field="separateExperiments" type="checkbox" ${design.separateExperiments !== false ? 'checked' : ''}> 每个检测目标独立生成实验方案（推荐）</label></div>
           <div class="starter-block"><h3>什么时候？</h3><p>终点时间会决定是否拆分容器和收样路径。</p>${renderTimeChips(design, true)}</div>
-          <div class="starter-block span-2"><details class="advanced-block"><summary>高级设置（重复、布局和对象批次）</summary><div class="advanced-body"><div class="quick-grid">${designField('对象批次 / passage', 'object.batch', design.object.batch, '例如 P4 / Batch 1')}${designField('Biological replicate', 'replication.biological', design.replication.biological, '例如 3', 'number')}${designField('Technical replicate', 'replication.technical', design.replication.technical, '例如 3', 'number')}${designSelect('布局策略', 'layoutStrategy', design.layoutStrategy, [{ value: 'continuous', label: '连续排列' }, { value: 'balanced', label: '跨容器平衡' }])}</div><label class="quick-check"><input data-design-field="separateTimepoints" type="checkbox" ${design.separateTimepoints ? 'checked' : ''}> 终点检测消耗样本时按时间点拆分容器</label></div></details></div>
-        </div><div class="starter-actions"><span class="subtle-note">生成后可在总览中逐项展开；输入即时保存。返回总览不会删除当前草稿。</span><div class="action-group"><button class="button-secondary" type="button" data-design-action="back-overview">返回方案总览（保留草稿）</button><button class="button-primary" type="button" data-starter-action="generate">生成实验方案</button></div></div></div>`;
+          <div class="starter-block span-2"><details class="advanced-block"><summary>高级设置（孔板、排列、重复和对象批次）</summary><div class="advanced-body"><div class="quick-grid">${designField('对象批次 / passage', 'object.batch', design.object.batch, '例如 P4 / Batch 1')}${designField('Biological replicate', 'replication.biological', design.replication.biological, '例如 3', 'number')}${designField('Technical replicate', 'replication.technical', design.replication.technical, '例如 3', 'number')}${designSelect('布局策略', 'layoutStrategy', design.layoutStrategy, [{ value: 'continuous', label: '组内连续排列' }, { value: 'balanced', label: '跨容器平衡' }])}${vesselFields}</div><label class="quick-check"><input data-design-field="vessel.avoidEdges" type="checkbox" ${design.vessel.avoidEdges ? 'checked' : ''}> 避开孔板边缘孔（可关闭，自主使用全部孔位）</label><div class="quick-note">支持 6、12、24、48、96 孔板；改变孔板或排列方式后，需要重新生成实验方案。</div><label class="quick-check"><input data-design-field="separateTimepoints" type="checkbox" ${design.separateTimepoints ? 'checked' : ''}> 终点检测消耗样本时按时间点拆分容器</label></div></details></div>
+        </div><div class="starter-actions"><span class="subtle-note">生成后进入方案总览；可以在总览中切换独立实验方案。</span><div class="action-group"><button class="button-secondary" type="button" data-design-action="back-overview">返回方案总览（保留草稿）</button><button class="button-primary" type="button" data-starter-action="generate">生成实验方案</button></div></div></div>`;
       }
 
       function moduleParameterField(module, schema) {
@@ -3210,21 +3311,24 @@
 
       function renderOverview(record) {
         const design = record.design;
-        const plan = compileExperimentPlan(design);
+        const entries = compileExperimentPlans(design);
+        const activeIndex = Math.max(0, Math.min(Number(state.activePlanIndex || 0), entries.length - 1));
+        state.activePlanIndex = activeIndex;
+        const active = entries[activeIndex];
+        const plan = active.plan;
         const conditions = (design.factors || []).flatMap(factor => (factor.levels || []).map(level => level.label)).filter(Boolean).join('、');
         const readouts = readoutsForDesign(design);
         const times = (design.timepoints || []).filter(item => clean(item.value)).map(item => `${item.value}${item.unit || 'd'}`).join('、');
         const hasCellSeeding = plan.workflow.some(item => item.type === 'cell_seeding');
         const containerLabel = hasCellSeeding ? (plan.vessel.kind === 'plate' ? `${plan.vessel.type} 孔板` : CONTAINER_TYPES[plan.vessel.kind]?.label || plan.vessel.kind) : plan.workflow.some(item => item.type === 'agar_plating') ? '培养平板 · 由涂板模块决定' : '样本容器 · 由工作流模块决定';
+        const tabs = entries.length > 1 ? `<div class="quick-callout"><strong>已拆分为 ${entries.length} 个独立实验方案</strong><div class="experiment-tabs">${entries.map((entry, index) => `<button class="experiment-tab ${index === activeIndex ? 'active' : ''}" type="button" data-plan-index="${index}"><span>实验 ${index + 1}</span><small>${escapeHtml(entry.recipeLabel)}</small></button>`).join('')}</div><div class="quick-note">每个方案拥有独立 workflow、孔板布局和 readout；先切换目标方案再开始执行。</div></div>` : '';
         const preview = renderContainerPreview(plan, 'overview');
         const preparation = renderResourcePlan(plan);
-        return `<div class="overview-panel"><div class="overview-actions"><div><span class="subtle-note">方案总览 · ${plan.conditions.length} 个展开条件 · ${plan.totalContainers || 0} 个容器</span></div><div class="action-group"><button class="button-secondary" type="button" data-design-action="edit-starter">继续设计</button><button class="button-primary" type="button" data-design-action="${hasCellSeeding ? 'start-execution' : 'bring-detail'}">${hasCellSeeding ? '开始执行' : '进入详细记录'}</button></div></div>
-          ${planNotice(plan)}
-          <div class="overview-grid"><button class="overview-row" type="button" data-design-edit="object"><span class="overview-row-label">研究对象</span><span class="overview-row-value">${escapeHtml(design.object.name || '待补充')} · ${escapeHtml(OBJECT_TYPES[design.object.type] || design.object.type)}</span><span class="overview-row-action">展开</span></button><button class="overview-row" type="button" data-design-edit="conditions"><span class="overview-row-label">比较条件</span><span class="overview-row-value">${escapeHtml(conditions || '待补充')}</span><span class="overview-row-action">展开</span></button><button class="overview-row" type="button" data-design-edit="readouts"><span class="overview-row-label">检测目标</span><span class="overview-row-value">${escapeHtml(readouts.map(item => item.name).join('、') || '待补充')}</span><span class="overview-row-action">展开</span></button><button class="overview-row" type="button" data-design-edit="time"><span class="overview-row-label">时间</span><span class="overview-row-value">${escapeHtml(times || '待补充')}</span><span class="overview-row-action">展开</span></button><button class="overview-row" type="button" data-design-edit="advanced"><span class="overview-row-label">重复 / 布局</span><span class="overview-row-value">${plan.replication.biological} biological × ${plan.replication.technical} technical · ${plan.layoutStrategy === 'balanced' ? '跨容器平衡' : '连续排列'}</span><span class="overview-row-action">展开</span></button></div>
-          <div class="workflow-section"><div class="section-heading" style="margin-top:0"><h3>工作流</h3><span>点击节点配置模块</span></div>${renderWorkflowGraph(design)}</div>
-          ${preview}
-          <div class="starter-block"><div class="section-heading" style="margin-top:0"><h3>实验准备与容器</h3><span>${escapeHtml(containerLabel)}</span></div>${preparation}</div>
-          <div>${renderDesignValidator(plan)}</div><div class="overview-actions"><span class="subtle-note">需要填写配方、现场参数或原始数据？进入“记录详情”继续。</span><div class="action-group"><button class="button-secondary" type="button" data-design-action="bring-detail">带入详细记录</button><button class="button-primary" type="button" data-design-action="${hasCellSeeding ? 'start-execution' : 'bring-detail'}">${hasCellSeeding ? '开始实验' : '开始记录'}</button></div></div></div>`;
+        const layoutText = `${layoutDirectionLabel(plan)} · ${plan.layoutStrategy === 'balanced' ? '跨容器平衡' : '组内连续'}`;
+        return `<div class="overview-panel"><div class="overview-actions"><div><span class="subtle-note">方案总览 · ${escapeHtml(active.recipeLabel)} · ${plan.conditions.length} 个展开条件 · ${plan.totalContainers || 0} 个容器</span></div><div class="action-group"><button class="button-secondary" type="button" data-design-action="edit-starter">继续设计</button><button class="button-primary" type="button" data-design-action="${hasCellSeeding ? 'start-execution' : 'bring-detail'}">${hasCellSeeding ? '开始当前实验' : '进入当前记录'}</button></div></div>${tabs}${planNotice(plan)}
+          <div class="overview-grid"><button class="overview-row" type="button" data-design-edit="object"><span class="overview-row-label">研究对象</span><span class="overview-row-value">${escapeHtml(design.object.name || '待补充')} · ${escapeHtml(OBJECT_TYPES[design.object.type] || design.object.type)}</span><span class="overview-row-action">展开</span></button><button class="overview-row" type="button" data-design-edit="conditions"><span class="overview-row-label">比较条件</span><span class="overview-row-value">${escapeHtml(conditions || '待补充')}</span><span class="overview-row-action">展开</span></button><button class="overview-row" type="button" data-design-edit="readouts"><span class="overview-row-label">当前检测</span><span class="overview-row-value">${escapeHtml(active.recipeLabel)}</span><span class="overview-row-action">展开</span></button><button class="overview-row" type="button" data-design-edit="time"><span class="overview-row-label">时间</span><span class="overview-row-value">${escapeHtml(times || '待补充')}</span><span class="overview-row-action">展开</span></button><button class="overview-row" type="button" data-design-edit="advanced"><span class="overview-row-label">孔板 / 排列</span><span class="overview-row-value">${escapeHtml(containerLabel)} · ${escapeHtml(layoutText)}</span><span class="overview-row-action">展开</span></button></div>
+          <div class="workflow-section"><div class="section-heading" style="margin-top:0"><h3>当前实验工作流</h3><span>${escapeHtml(active.recipeLabel)}</span></div>${renderWorkflowGraph(designForRecipe(design, active.recipeKey))}</div>${preview}
+          <div class="starter-block"><div class="section-heading" style="margin-top:0"><h3>实验准备与容器</h3><span>${escapeHtml(containerLabel)}</span></div>${preparation}</div><div>${renderDesignValidator(plan)}</div><div class="overview-actions"><span class="subtle-note">需要填写配方、现场参数或原始数据？进入“记录详情”继续。</span><div class="action-group"><button class="button-secondary" type="button" data-design-action="bring-detail">带入当前实验记录</button><button class="button-primary" type="button" data-design-action="${hasCellSeeding ? 'start-execution' : 'bring-detail'}">${hasCellSeeding ? '开始当前实验' : '开始当前记录'}</button></div></div></div>`;
       }
 
       function renderDesignSurface(record) {
@@ -3377,6 +3481,7 @@
           return;
         }
         setPath(record.design, path, field.type === 'checkbox' ? field.checked : field.value);
+        if (path.startsWith('vessel.') || path.startsWith('seeding.')) syncCellSeedingModuleConfig(record.design);
         if (path === 'vessel.type') {
           record.design.vessel.capacity = field.value;
           ensureCellSeedingConfig(record.design).vessel = { ...record.design.vessel };
@@ -3505,7 +3610,7 @@
         if (input.checked) selected.add(input.dataset.designRecipe);
         else selected.delete(input.dataset.designRecipe);
         design.selectedRecipes = [...selected];
-        syncRecipeOutputs(design);
+        if (design.separateExperiments !== false && design.selectedRecipes.length > 1) { design.modules = []; design.readouts = []; } else { syncRecipeOutputs(design); }
         if ((clean(record.meta.title) === '' && clean(design.object.name)) || record.meta.title === previousAutoTitle) {
           record.meta.title = `${clean(design.object.name) || '未命名对象'} ${(design.selectedRecipes || []).map(recipeLabel).join('＋') || '实验'} 实验`;
         }
@@ -3541,39 +3646,27 @@
         const design = record.design;
         const factor = design.factors[0];
         const levels = factor?.levels?.filter(level => clean(level.label)) || [];
-        if (!clean(design.object.name)) {
-          showToast('请先填写研究对象。', true);
-          return;
-        }
-        if (!levels.length) {
-          showToast('至少需要一个比较条件。', true);
-          return;
-        }
-        if (!(design.selectedRecipes || []).length) {
-          showToast('至少选择一个检测目标。', true);
-          return;
-        }
-        if (!(design.timepoints || []).some(item => clean(item.value))) {
-          showToast('至少填写一个时间点。', true);
-          return;
-        }
+        if (!clean(design.object.name)) { showToast('请先填写研究对象。', true); return; }
+        if (!levels.length) { showToast('至少需要一个比较条件。', true); return; }
+        if (!(design.selectedRecipes || []).length) { showToast('至少选择一个检测目标。', true); return; }
+        if (!(design.timepoints || []).some(item => clean(item.value))) { showToast('至少填写一个时间点。', true); return; }
         if (!confirmPlanOverwrite(design)) return;
-        syncRecipeOutputs(design);
+        if (design.separateExperiments !== false && design.selectedRecipes.length > 1) { design.modules = []; design.readouts = []; } else { syncRecipeOutputs(design); }
+        const entries = compileExperimentPlans(design);
+        design.generatedPlans = entries.map(entry => ({ recipeKey: entry.recipeKey, recipeLabel: entry.recipeLabel, ...entry.plan }));
+        design.generatedPlan = entries[0]?.plan || null;
+        design.planDirty = false;
+        design.resources = entries[0]?.plan.resources || [];
+        design.preparations = entries[0]?.plan.preparations || [];
         const recipeLabels = design.selectedRecipes.map(recipeLabel);
-        record.meta.title = clean(record.meta.title) || `${clean(design.object.name)} ${recipeLabels.join('＋')} 实验`;
+        record.meta.title = clean(record.meta.title) || `${clean(design.object.name)} ${recipeLabels.join('＋') || '实验'} 实验`;
         record.meta.subject = clean(design.object.name);
         record.meta.experimentType = RECIPE_DEFS[design.selectedRecipes[0]]?.detailType || 'other';
-        design.generatedPlan = compileExperimentPlan(design);
-        design.planDirty = false;
-        design.resources = (design.generatedPlan.resources || []).map(normalizeResource);
-        design.preparations = (design.generatedPlan.preparations || []).map(normalizePreparation);
-        state.preview = { scope: 'all', readout: 'all', slot: '' };
-        state.view = 'overview';
-        state.designSection = 'starter';
-        state.activeModuleId = null;
-        renderCurrent();
-        markDirty();
-        showToast('实验方案已生成。');
+        state.activePlanIndex = 0;
+        state.preview = { scope: 'all', readout: 'all', slot: '', plateMode: 'fit' };
+        state.view = 'overview'; state.designSection = 'starter'; state.activeModuleId = null;
+        renderCurrent(); markDirty();
+        showToast(entries.length > 1 ? `已生成 ${entries.length} 个独立实验方案。` : '实验方案已生成。');
       }
 
       function startRecipeDesign(recipeKey) {
@@ -3765,7 +3858,7 @@
       function startSeedingExecution() {
         const record = currentRecord();
         if (!record) return;
-        const plan = compileExperimentPlan(record.design);
+        const plan = activeCompiledPlan(record.design).plan;
         if (!plan.workflow.some(item => item.type === 'cell_seeding')) {
           showToast('当前 workflow 不包含 Cell Seeding，不能进入铺板执行模式。', true);
           return;
@@ -3786,7 +3879,7 @@
       function bringPlanToDetail() {
         const record = currentRecord();
         if (!record) return;
-        const plan = compileExperimentPlan(record.design);
+        const plan = activeCompiledPlan(record.design).plan;
         if (plan.blockingWarnings.length) {
           showToast(`请先修正：${plan.blockingWarnings[0]}`, true);
           return;
@@ -4055,7 +4148,7 @@
         state.records.push(record);
         state.currentId = record.id;
         state.view = 'design';
-        state.preview = { scope: 'all', readout: 'all', slot: '' };
+        state.preview = { scope: 'all', readout: 'all', slot: '', plateMode: 'fit' };
         state.designSection = 'starter';
         state.activeModuleId = null;
         state.dirty = false;
@@ -4073,7 +4166,7 @@
         state.currentId = id;
         state.view = 'overview';
         state.designSection = 'starter';
-        state.preview = { scope: 'all', readout: 'all', slot: '' };
+        state.preview = { scope: 'all', readout: 'all', slot: '', plateMode: 'fit' };
         state.activeModuleId = null;
         state.dirty = false;
         resetRouteStack();
@@ -4533,6 +4626,10 @@
           renderCurrent();
           return;
         }
+        const planIndex = event.target.closest('[data-plan-index]');
+        if (planIndex) { state.activePlanIndex = Number(planIndex.dataset.planIndex) || 0; state.preview.slot = ''; renderCurrent(); return; }
+        const previewPlateMode = event.target.closest('[data-preview-plate-mode]');
+        if (previewPlateMode) { state.preview.plateMode = previewPlateMode.dataset.previewPlateMode === 'large' ? 'large' : 'fit'; renderCurrent(); return; }
         const previewSlot = event.target.closest('[data-preview-slot]');
         if (previewSlot) {
           state.preview.slot = previewSlot.dataset.previewSlot;

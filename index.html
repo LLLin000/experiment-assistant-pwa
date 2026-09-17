@@ -1049,7 +1049,7 @@
         <button type="button" data-nav="records"><span class="nav-icon">▤</span><span>记录</span></button>
         <button type="button" data-nav="profile"><span class="nav-icon">○</span><span>我的</span></button>
       </nav>
-      <p class="footer-note">实验助手 v1.4 · 数据保存在浏览器 localStorage · 重要记录请定期导出 JSON</p>
+      <p class="footer-note">实验助手 v1.5 · 数据保存在浏览器 localStorage · 重要记录请定期导出 JSON</p>
     </main>
   </div>
 
@@ -1062,7 +1062,7 @@
       'use strict';
 
       const STORAGE_KEY = 'lab-notebook-archive-v1';
-      const TOOL_VERSION = '1.4.0';
+      const TOOL_VERSION = '1.5.0';
       const $ = (selector, root = document) => root.querySelector(selector);
       const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
       const state = { records: [], trash: [], currentId: null, dirty: false, saveTimer: null, toastTimer: null, lastSavedAt: null, lastCalculation: null, view: 'home', designSection: 'starter', activeModuleId: null, activeTool: 'cell-seeding', toolInputs: {}, toolResult: null, preview: { scope: 'all', readout: 'all', slot: '', plateMode: 'fit' }, activePlanIndex: 0, routeStack: [], history: { recordId: null, snapshots: [], savedSignature: '' } };
@@ -3832,7 +3832,7 @@
         record.design.generatedPlan = plan;
         record.design.planDirty = false;
         record.meta.experimentType = recordTypes.length === 1 ? recordTypes[0] : 'other';
-        record.meta.title = clean(record.meta.title) || `${objectLabel} ${recipeLabels.join('＋') || '实验'}方案`;
+        record.meta.title = clean(record.meta.title) || `${objectLabel} ${plan.recipeLabel || recipeLabels.join('＋') || '实验'}方案`;
         record.meta.subject = clean(record.meta.subject) || objectLabel;
         record.meta.objective = `描述${objectLabel}在${plan.factors.map(factor => factor.name).join('、')}因素和${plan.timepoints.map(item => item.label).join('、')}时间点下的实验表现。`;
         record.meta.conditions = `对象：${objectLabel}；${containerLabel}；biological replicate=${plan.replication.biological}；technical replicate=${plan.replication.technical}；布局：${plan.layoutStrategy === 'balanced' ? '跨板平衡' : '连续排列'}；流程：${workflowLabels}。`;
